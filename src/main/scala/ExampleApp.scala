@@ -1,33 +1,59 @@
-import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider
-import software.amazon.awssdk.regions.Region
-import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.{Bucket, ListBucketsResponse}
+import akka.NotUsed
+import akka.actor.{ActorSystem, Cancellable}
+import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
 
-import java.util
-import scala.collection.{immutable, mutable}
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration._
+import scala.util.Random
 
-import scala.collection.convert.ImplicitConversions._
-import scala.jdk.CollectionConverters._
+
+object MySources {
+  val simpleSource: Source[Int, NotUsed] = Source(1 to 10)
+  val tickSource: Source[Int, Cancellable] = Source
+    .tick(
+      initialDelay = 250.millis, // delay of first tick
+      interval = 250.millis, // delay of subsequent ticks
+      tick = 1 // element emitted each tick
+    )
+    .take(10)
+}
+
+object MyFlows {
+  val doublerFlow = Flow[Int].map(_ * 2)
+  val triplerFlow = Flow[Int].map(_ * 3)
+}
+
+object MySinks {
+  val sumSink = Sink.fold[Int, Int](0)(_ + _)
+  val productSink = Sink.fold[Int, Int](1)(_ * _)
+  val printSink = Sink.foreach[Int](println)
+}
+
 
 object ExampleApp extends App {
-  val region = Region.US_WEST_2
+  import MySinks._
+  import MyFlows._
+  import MySources._
 
-  val profileName = "foo"
+  implicit val ec: ExecutionContext =
+    AkkaBuilder.buildExecutionContext()
 
-  val credentials = ProfileCredentialsProvider
-    .create(profileName)
+  implicit val actorSystem: ActorSystem =
+    AkkaBuilder.buildActorSystem()
 
-  val s3Client = S3Client.builder()
-    .credentialsProvider(credentials)
-    .region(region)
-    .build();
+  val doubleThenTripleFlow = doublerFlow.via(triplerFlow)
 
-  val bucketList: ListBucketsResponse = s3Client.listBuckets()
-  val javaList: util.List[Bucket] = bucketList.buckets()
+  val runnable: RunnableGraph[Future[Int]] = tickSource
+    .via(doubleThenTripleFlow)
+    .map(_ + Random.nextInt())
+    .wireTap(printSink)
+    .toMat(productSink)(Keep.right)
 
-  // Deprecated uses scala.collection.convert.ImplicitConversions._
-  javaList.toList
+  // materialize the flow and get the value
+  val sum: Future[Int] = runnable.run()
 
-  val mutableSeq: mutable.Seq[Bucket] = javaList.asScala
-  val scalaList: immutable.Seq[Bucket] =  javaList.asScala.toSeq
+  val result = Await.result(sum, Duration.Inf)
+
+  println(result)
 }
