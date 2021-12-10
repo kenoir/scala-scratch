@@ -1,59 +1,43 @@
-import akka.NotUsed
-import akka.actor.{ActorSystem, Cancellable}
-import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model._
+import akka.http.scaladsl.server.Directives._
 
-import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.concurrent.duration._
-import scala.util.Random
+import scala.concurrent.ExecutionContext
+import scala.io.StdIn
 
 
-object MySources {
-  val simpleSource: Source[Int, NotUsed] = Source(1 to 10)
-  val tickSource: Source[Int, Cancellable] = Source
-    .tick(
-      initialDelay = 250.millis, // delay of first tick
-      interval = 250.millis, // delay of subsequent ticks
-      tick = 1 // element emitted each tick
-    )
-    .take(10)
+object ExampleRoutes {
+  val hello =
+    path("hello") {
+      get {
+        complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, "hello"))
+      }
+    }
+
+  val bye =
+    path("bye") {
+      get {
+        complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, "bye"))
+      }
+    }
 }
-
-object MyFlows {
-  val doublerFlow = Flow[Int].map(_ * 2)
-  val triplerFlow = Flow[Int].map(_ * 3)
-}
-
-object MySinks {
-  val sumSink = Sink.fold[Int, Int](0)(_ + _)
-  val productSink = Sink.fold[Int, Int](1)(_ * _)
-  val printSink = Sink.foreach[Int](println)
-}
-
 
 object ExampleApp extends App {
-  import MySinks._
-  import MyFlows._
-  import MySources._
-
   implicit val ec: ExecutionContext =
     AkkaBuilder.buildExecutionContext()
 
-  implicit val actorSystem: ActorSystem =
+  implicit val actorSystem =
     AkkaBuilder.buildActorSystem()
 
-  val doubleThenTripleFlow = doublerFlow.via(triplerFlow)
+  val routes = ExampleRoutes.hello ~ ExampleRoutes.bye
 
-  val runnable: RunnableGraph[Future[Int]] = tickSource
-    .via(doubleThenTripleFlow)
-    .map(_ + Random.nextInt())
-    .wireTap(printSink)
-    .toMat(productSink)(Keep.right)
+  val bindingFuture = Http().newServerAt("localhost", 8080).bind(routes)
 
-  // materialize the flow and get the value
-  val sum: Future[Int] = runnable.run()
+  println(s"Server now online. Please navigate to http://localhost:8080/hello\nPress RETURN to stop...")
 
-  val result = Await.result(sum, Duration.Inf)
+  StdIn.readLine() // let it run until user presses return
 
-  println(result)
+  bindingFuture
+    .flatMap(_.unbind()) // trigger unbinding from the port
+    .onComplete(_ => actorSystem.terminate()) // and shutdown when done
 }

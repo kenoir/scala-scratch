@@ -3,18 +3,22 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.funspec.AnyFunSpec
 import org.scalatest.matchers.should.Matchers._
 
+
+import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.testkit.ScalatestRouteTest
+import akka.http.scaladsl.server._
+import Directives._
+
 import scala.concurrent.Future
 
-class ExampleAppTest extends AnyFunSpec with Akka with ScalaFutures {
-  import MySinks._
-  import MySources._
+class ExampleAppTest extends AnyFunSpec with Akka with ScalaFutures with ScalatestRouteTest {
 
-  it("should run the test") {
-    withMaterializer { implicit mat =>
-      val runnable: RunnableGraph[Future[Int]] = simpleSource.toMat(productSink)(Keep.right)
+  import ExampleRoutes._
 
-      whenReady(runnable.run()) { sum =>
-        sum shouldBe 55
+  describe("GET /hello") {
+    it("returns hello") {
+      Get("/hello") ~> hello ~> check {
+        responseAs[String] shouldEqual "hello"
       }
     }
   }
