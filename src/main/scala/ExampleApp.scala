@@ -1,26 +1,10 @@
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 
 import scala.concurrent.ExecutionContext
 import scala.io.StdIn
 
-
-object ExampleRoutes {
-  val hello =
-    path("hello") {
-      get {
-        complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, "hello"))
-      }
-    }
-
-  val bye =
-    path("bye") {
-      get {
-        complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, "bye"))
-      }
-    }
-}
+case class Greeting(bar: String)
 
 object ExampleApp extends App {
   implicit val ec: ExecutionContext =
@@ -29,7 +13,7 @@ object ExampleApp extends App {
   implicit val actorSystem =
     AkkaBuilder.buildActorSystem()
 
-  val routes = ExampleRoutes.hello ~ ExampleRoutes.bye
+  val routes = AppRoutes.hello ~ AppRoutes.bye ~ AppRoutes.reverse
 
   val bindingFuture = Http().newServerAt("localhost", 8080).bind(routes)
 
